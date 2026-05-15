@@ -45,6 +45,8 @@ export const EXAMPLES: Example[] = [
   },
 ];
 
+import { sanitizeAffiliateUrl } from "./affiliate";
+
 const examplePlanCache = new Map<string, PlanResponse>();
 
 export function loadExamplePlan(slug: string): PlanResponse | null {
@@ -54,6 +56,18 @@ export function loadExamplePlan(slug: string): PlanResponse | null {
     const path = join(process.cwd(), "data", "examples", `${slug}.plan.json`);
     const json = readFileSync(path, "utf-8");
     const plan = JSON.parse(json) as PlanResponse;
+    // Cached example fixtures contain the placeholder affiliate tag from
+    // pre-launch data generation. Sanitize at load time so users never see
+    // ?tag=REPLACE-WITH-YOUR-TAG-20 in the browser.
+    if (plan.sections) {
+      for (const section of plan.sections) {
+        for (const product of section.products) {
+          if (product.affiliateUrl) {
+            product.affiliateUrl = sanitizeAffiliateUrl(product.affiliateUrl);
+          }
+        }
+      }
+    }
     examplePlanCache.set(slug, plan);
     return plan;
   } catch {
