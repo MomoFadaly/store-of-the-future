@@ -41,9 +41,70 @@ const BRAND_DIRECT: Record<string, (name: string) => string> = {
   oneill: (n) => `https://www.oneill.com/search?q=${encodeURIComponent(n)}`,
 };
 
+// Brand-aware specialty routing — when the model picks a brand that's
+// definitively in a specialty category (Therm-a-Rest = outdoor, Breville =
+// espresso, Fender = music), route to the specialty retailer regardless
+// of the product name. This catches the case where model returns a model
+// number ("NeoAir XLite NXT") that contains no category keywords.
+const SPECIALTY_BY_BRAND: Record<string, { url: (q: string) => string; name: string }> = {
+  // Outdoor / camping / hiking → REI
+  ...Object.fromEntries(
+    [
+      "thermarest", "therm-a-rest", "jetboil", "msr", "bigagnes", "kelty",
+      "sawyer", "nemo", "osprey", "gregory", "marmot", "blackdiamond",
+      "reicoop", "rei", "mountainhardwear", "outdoorresearch", "smartwool",
+      "darntough", "salomon", "lasportiva", "scarpa", "merrell",
+    ].map((b) => [b, { url: (q: string) => `https://www.rei.com/search?q=${encodeURIComponent(q)}`, name: "REI" }])
+  ),
+  // Espresso / coffee → Seattle Coffee Gear
+  ...Object.fromEntries(
+    [
+      "breville", "baratza", "rancilio", "lamarzocco", "lelit", "profitec",
+      "niche", "nichezero", "fellow", "acaia", "normcore", "rhinowares",
+      "ecm", "rocket", "gaggia", "ascaso", "decent", "comandante",
+      "1zpresso", "wilfa", "ode", "varia",
+    ].map((b) => [b, { url: (q: string) => `https://www.seattlecoffeegear.com/search?q=${encodeURIComponent(q)}`, name: "Seattle Coffee Gear" }])
+  ),
+  // Music / instruments → Sweetwater
+  ...Object.fromEntries(
+    [
+      "fender", "gibson", "epiphone", "martin", "taylor", "prs", "ibanez",
+      "gretsch", "yamaha", "casio", "roland", "korg", "moog", "arturia",
+      "novation", "akai", "elektron", "shure", "sennheiser", "audiotechnica",
+      "neumann", "rode", "behringer", "focusrite", "universalaudio", "ssl",
+      "presonus", "midi", "boss", "linesix", "marshall", "vox", "blackstar",
+    ].map((b) => [b, { url: (q: string) => `https://www.sweetwater.com/store/search.php?s=${encodeURIComponent(q)}`, name: "Sweetwater" }])
+  ),
+  // Cookware / kitchen → Williams-Sonoma
+  ...Object.fromEntries(
+    [
+      "lecreuset", "staub", "lodge", "allclad", "mauviel", "demeyere",
+      "scanpan", "shun", "wusthof", "global", "miyabi", "zwilling",
+      "vitamix", "breville", "kitchenaid", "smeg", "delonghi",
+      "johnboos", "epicurean",
+    ].map((b) => [b, { url: (q: string) => `https://www.williams-sonoma.com/search/results.html?words=${encodeURIComponent(q)}`, name: "Williams Sonoma" }])
+  ),
+  // Beauty / skincare → Sephora
+  ...Object.fromEntries(
+    [
+      "drunkelephant", "theordinary", "laroche-posay", "larocheposay",
+      "skinceuticals", "paulaschoice", "tatcha", "fenty", "rare",
+      "fentybeauty", "rarebeauty", "ilia", "kosas", "glossier",
+      "sundayriley", "augustinusbader", "biossance",
+    ].map((b) => [b, { url: (q: string) => `https://www.sephora.com/search?keyword=${encodeURIComponent(q)}`, name: "Sephora" }])
+  ),
+  // Furniture / home → West Elm
+  ...Object.fromEntries(
+    [
+      "westelm", "potterybarn", "crateandbarrel", "crateandbarrelkids",
+      "cb2", "rejuvenation",
+    ].map((b) => [b, { url: (q: string) => `https://www.westelm.com/search/results.html?words=${encodeURIComponent(q)}`, name: "West Elm" }])
+  ),
+};
+
 // Category-aware specialty retailers — fall back here when brand-direct
-// doesn't apply. The product type (inferred from name keywords) picks the
-// best specialty retailer for that category.
+// AND brand-specialty don't apply. The product type (inferred from name
+// keywords) picks the best specialty retailer for that category.
 const SPECIALTY_BY_KEYWORD: Array<{ keywords: RegExp; url: (q: string) => string; name: string }> = [
   // Outdoor / camping / hiking gear → REI
   { keywords: /\b(tent|backpack|sleeping bag|sleeping pad|stove|water filter|trekking|hiking|climbing|crampons|harness|carabiner|bear canister|kayak|ski|snowboard)\b/i,
@@ -71,10 +132,12 @@ const SPECIALTY_BY_KEYWORD: Array<{ keywords: RegExp; url: (q: string) => string
 // Build a real product URL.
 // Priority:
 //   1. Brand-direct (these brands sell direct + are usually best path to buy)
-//   2. Specialty retailer matched by product-type keywords (REI for outdoor,
+//   2. Brand-specialty (the brand IS the category signal — Therm-a-Rest → REI,
+//      Breville → Seattle Coffee Gear, Fender → Sweetwater, etc.)
+//   3. Specialty retailer matched by product-type keywords (REI for outdoor,
 //      Williams-Sonoma for cookware, Seattle Coffee Gear for espresso, etc.)
-//   3. Confirmed Amazon ASIN (direct product page on Amazon)
-//   4. Amazon keyword search (last resort)
+//   4. Confirmed Amazon ASIN (direct product page on Amazon)
+//   5. Amazon keyword search (last resort)
 //
 // Specialty/brand routing wins over Amazon ASIN even when both exist —
 // the model is told to pick the BEST product, the routing layer puts it
@@ -91,15 +154,22 @@ export function affiliateUrlFor(
   const brandUrlBuilder = BRAND_DIRECT[brandKey];
   if (brandUrlBuilder) return brandUrlBuilder(name);
 
-  // 2. Specialty retailer based on product type
   const fullQuery = `${brand} ${name}`.trim();
+
+  // 2. Brand-specialty (Therm-a-Rest → REI, Breville → Seattle Coffee Gear,
+  //    Fender → Sweetwater, Le Creuset → Williams-Sonoma, etc.) — most
+  //    reliable because the brand IS the category signal.
+  const brandSpecialty = SPECIALTY_BY_BRAND[brandKey];
+  if (brandSpecialty) return brandSpecialty.url(fullQuery);
+
+  // 3. Specialty retailer based on product-type keywords
   for (const route of SPECIALTY_BY_KEYWORD) {
     if (route.keywords.test(name) || route.keywords.test(brand)) {
       return route.url(fullQuery);
     }
   }
 
-  // 3. Confirmed Amazon ASIN — direct product page
+  // 4. Confirmed Amazon ASIN — direct product page
   if (asin) {
     const tagSuffix = TAG ? `?tag=${TAG}` : "";
     return `https://www.amazon.com/dp/${asin}${tagSuffix}`;
