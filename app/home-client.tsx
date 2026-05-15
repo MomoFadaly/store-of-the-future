@@ -380,20 +380,57 @@ export default function HomeClient({
           animate={{ opacity: 1 }}
           className="min-h-[100dvh] flex items-center justify-center px-6"
         >
-          <div className="max-w-md">
-            <p className="font-mono text-[10px] tracking-[0.22em] uppercase text-accent mb-4">
-              Something went wrong
-            </p>
-            <p className="font-serif italic text-2xl text-text mb-6 leading-snug">
-              {errorText}
-            </p>
-            <button
-              onClick={reset}
-              className="font-mono text-[10px] tracking-[0.22em] uppercase border border-text text-text px-4 py-3 hover:bg-text hover:text-bg transition-colors"
-            >
-              Start over →
-            </button>
-          </div>
+          {errorText.includes("LIVE_PLANNER_OFFLINE") ? (
+            // Special case: API key missing / live planner offline.
+            // Don't expose dev errors; route to the pre-generated live examples instead.
+            <div className="max-w-lg text-center">
+              <p className="font-mono text-[10px] tracking-[0.22em] uppercase text-accent mb-4">
+                Live planner is resting
+              </p>
+              <p className="font-serif italic text-2xl text-text mb-3 leading-snug">
+                The on-demand version is offline right now.
+              </p>
+              <p className="text-text-muted text-sm leading-relaxed mb-8">
+                You can still see exactly how it works on the live examples below — real plans,
+                same engine, generated end-to-end.
+              </p>
+              <div className="flex flex-wrap gap-3 justify-center">
+                <a
+                  href="/example/bedroom-reset"
+                  className="font-mono text-[10px] tracking-[0.22em] uppercase border border-text text-text px-4 py-3 hover:bg-text hover:text-bg transition-colors"
+                >
+                  See bedroom reset →
+                </a>
+                <a
+                  href="/example/newborn-essentials"
+                  className="font-mono text-[10px] tracking-[0.22em] uppercase border border-border text-text-muted px-4 py-3 hover:border-text hover:text-text transition-colors"
+                >
+                  Newborn essentials →
+                </a>
+                <button
+                  onClick={reset}
+                  className="font-mono text-[10px] tracking-[0.22em] uppercase text-text-muted px-4 py-3 hover:text-text transition-colors"
+                >
+                  Start over
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="max-w-md">
+              <p className="font-mono text-[10px] tracking-[0.22em] uppercase text-accent mb-4">
+                Something went wrong
+              </p>
+              <p className="font-serif italic text-2xl text-text mb-6 leading-snug">
+                {errorText}
+              </p>
+              <button
+                onClick={reset}
+                className="font-mono text-[10px] tracking-[0.22em] uppercase border border-text text-text px-4 py-3 hover:bg-text hover:text-bg transition-colors"
+              >
+                Start over →
+              </button>
+            </div>
+          )}
         </motion.div>
       )}
     </>

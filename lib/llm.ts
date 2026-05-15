@@ -21,9 +21,10 @@ function client(): Anthropic {
   if (!_client) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      throw new Error(
-        "ANTHROPIC_API_KEY is not set. The demo cannot reach the model."
-      );
+      // User-friendly — no env var names leaked to the page.
+      // Server logs still get the technical detail below.
+      console.error("[llm] ANTHROPIC_API_KEY missing — set it in Vercel env vars.");
+      throw new Error("LIVE_PLANNER_OFFLINE");
     }
     _client = new Anthropic({ apiKey });
   }
