@@ -69,30 +69,40 @@ const SPECIALTY_BY_KEYWORD: Array<{ keywords: RegExp; url: (q: string) => string
 ];
 
 // Build a real product URL.
-// Priority: confirmed Amazon ASIN → brand-direct → specialty retailer → Amazon search.
-// All targets are real e-commerce pages.
+// Priority:
+//   1. Brand-direct (these brands sell direct + are usually best path to buy)
+//   2. Specialty retailer matched by product-type keywords (REI for outdoor,
+//      Williams-Sonoma for cookware, Seattle Coffee Gear for espresso, etc.)
+//   3. Confirmed Amazon ASIN (direct product page on Amazon)
+//   4. Amazon keyword search (last resort)
+//
+// Specialty/brand routing wins over Amazon ASIN even when both exist —
+// the model is told to pick the BEST product, the routing layer puts it
+// in the BEST store (REI ships outdoor gear faster than Amazon does, IKEA
+// is the only place to actually buy IKEA, etc.). All targets are real
+// e-commerce pages.
 export function affiliateUrlFor(
   brand: string,
   name: string,
   asin: string | null | undefined
 ): string {
-  // 1. Confirmed Amazon ASIN — direct product page
-  if (asin) {
-    const tagSuffix = TAG ? `?tag=${TAG}` : "";
-    return `https://www.amazon.com/dp/${asin}${tagSuffix}`;
-  }
-
-  // 2. Brand-direct (best price + warranty for these brands)
+  // 1. Brand-direct (IKEA / Patagonia / MUJI / Apple / etc.)
   const brandKey = brand.toLowerCase().replace(/[^a-z]/g, "");
   const brandUrlBuilder = BRAND_DIRECT[brandKey];
   if (brandUrlBuilder) return brandUrlBuilder(name);
 
-  // 3. Specialty retailer based on product type
+  // 2. Specialty retailer based on product type
   const fullQuery = `${brand} ${name}`.trim();
   for (const route of SPECIALTY_BY_KEYWORD) {
     if (route.keywords.test(name) || route.keywords.test(brand)) {
       return route.url(fullQuery);
     }
+  }
+
+  // 3. Confirmed Amazon ASIN — direct product page
+  if (asin) {
+    const tagSuffix = TAG ? `?tag=${TAG}` : "";
+    return `https://www.amazon.com/dp/${asin}${tagSuffix}`;
   }
 
   // 4. Amazon keyword search (last resort — still a real product page)
