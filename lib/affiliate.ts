@@ -76,11 +76,15 @@ const SPECIALTY_BY_BRAND: Record<string, { url: (q: string) => string; name: str
     ].map((b) => [b, { url: (q: string) => `https://www.sweetwater.com/store/search.php?s=${encodeURIComponent(q)}`, name: "Sweetwater" }])
   ),
   // Cookware / kitchen → Williams-Sonoma
+  // (Note: "breville" is intentionally NOT here — espresso category wins,
+  // since Breville's espresso lineup is the more distinctive use of the brand.
+  // Williams-Sonoma still sells Breville, but Seattle Coffee Gear is better
+  // for espresso-specific picks.)
   ...Object.fromEntries(
     [
       "lecreuset", "staub", "lodge", "allclad", "mauviel", "demeyere",
       "scanpan", "shun", "wusthof", "global", "miyabi", "zwilling",
-      "vitamix", "breville", "kitchenaid", "smeg", "delonghi",
+      "vitamix", "kitchenaid", "smeg", "delonghi",
       "johnboos", "epicurean",
     ].map((b) => [b, { url: (q: string) => `https://www.williams-sonoma.com/search/results.html?words=${encodeURIComponent(q)}`, name: "Williams Sonoma" }])
   ),
