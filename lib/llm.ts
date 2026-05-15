@@ -1,6 +1,34 @@
 import "server-only";
-import { query, type Options } from "@anthropic-ai/claude-agent-sdk";
+import Anthropic from "@anthropic-ai/sdk";
 import type { ChatMessage } from "./types";
+
+/**
+ * LLM wrapper. Talks to the Anthropic API directly via @anthropic-ai/sdk.
+ *
+ * History note: this used to wrap @anthropic-ai/claude-agent-sdk, which is
+ * a thin wrapper around the Claude Code CLI binary. That worked locally but
+ * broke on Vercel — the CLI binary isn't present in the linux-x64 serverless
+ * runtime, surfacing as "Native CLI binary for linux-x64 not found." For a
+ * stateless serverless demo, the standard SDK is the right tool: no native
+ * binary, no platform-specific dependencies, deterministic in any runtime.
+ */
+
+const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL || "claude-opus-4-5";
+const DEFAULT_MAX_TOKENS = 8192;
+
+let _client: Anthropic | null = null;
+function client(): Anthropic {
+  if (!_client) {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        "ANTHROPIC_API_KEY is not set. The demo cannot reach the model."
+      );
+    }
+    _client = new Anthropic({ apiKey });
+  }
+  return _client;
+}
 
 interface BaseParams {
   systemPrompt: string;
@@ -12,87 +40,92 @@ interface StructuredQueryParams extends BaseParams {
   schema: Record<string, unknown>;
 }
 
-function buildTranscript(messages: ChatMessage[]): string {
+/**
+ * Convert our internal ChatMessage[] format to the Anthropic Messages API
+ * shape. We keep the system prompt separate (system parameter), and turn
+ * everything else into user/assistant turns.
+ */
+function toApiMessages(messages: ChatMessage[]): Anthropic.MessageParam[] {
+  // Drop any system messages — they're handled via the `system` parameter.
+  // Map "user" → user and everything else → assistant.
   return messages
-    .map((m) => `[${m.role.toUpperCase()}]\n${m.content}`)
-    .join("\n\n");
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({
+      role: m.role === "user" ? "user" : "assistant",
+      content: m.content,
+    }));
 }
 
-function baseOptions(params: BaseParams): Options {
-  return {
-    model: params.model ?? "claude-opus-4-7",
-    systemPrompt: params.systemPrompt,
-    tools: [],
-    allowedTools: [],
-    persistSession: false,
-    thinking: { type: "disabled" },
-  };
-}
-
-// Structured single-shot call with JSON schema enforcement.
-// Used for plan synthesis where we want a structured object out.
+/**
+ * Single-shot structured call.
+ *
+ * Uses Anthropic's tool-use mechanism to enforce a JSON schema: we declare
+ * a single tool whose input schema matches what we want, force the model
+ * to use it, and read tool_use.input as the result.
+ */
 export async function structuredQuery<T>(
   params: StructuredQueryParams
 ): Promise<T> {
-  const options: Options = {
-    ...baseOptions(params),
-    outputFormat: { type: "json_schema", schema: params.schema },
-  };
+  const STRUCTURED_TOOL_NAME = "emit_structured_response";
 
-  const q = query({ prompt: buildTranscript(params.messages), options });
+  const response = await client().messages.create({
+    model: params.model ?? DEFAULT_MODEL,
+    max_tokens: DEFAULT_MAX_TOKENS,
+    system: params.systemPrompt,
+    messages: toApiMessages(params.messages),
+    tools: [
+      {
+        name: STRUCTURED_TOOL_NAME,
+        description:
+          "Emit your final answer as a structured object matching the provided schema.",
+        // The Anthropic SDK types input_schema as a JSONSchema-like object.
+        input_schema: params.schema as Anthropic.Tool.InputSchema,
+      },
+    ],
+    tool_choice: { type: "tool", name: STRUCTURED_TOOL_NAME },
+  });
 
-  for await (const msg of q) {
-    if (msg.type === "result") {
-      if (msg.subtype === "success") {
-        if (msg.structured_output !== undefined) {
-          return msg.structured_output as T;
-        }
-        try {
-          return JSON.parse(msg.result) as T;
-        } catch {
-          throw new Error(
-            `Model returned non-JSON: ${msg.result.slice(0, 200)}`
-          );
-        }
-      }
-      throw new Error(
-        `LLM failed (${msg.subtype}): ${msg.errors.join("; ") || "no detail"}`
-      );
-    }
+  const toolUse = response.content.find(
+    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use"
+  );
+
+  if (!toolUse) {
+    // Surface the text the model returned in case it's diagnostic.
+    const text = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join(" ")
+      .slice(0, 200);
+    throw new Error(
+      `LLM did not emit the structured tool call. Model said: ${text || "(no text)"}`
+    );
   }
 
-  throw new Error("LLM query ended without a result message.");
+  return toolUse.input as T;
 }
 
-// Streaming text generator — yields plain-text chunks as the model writes.
-// Used for the interview turn so the user sees the question appear in real time.
+/**
+ * Streaming text generator — yields plain-text chunks as the model writes.
+ *
+ * Used for interview turns so the user sees the question appear in real time.
+ */
 export async function* streamingTextQuery(
   params: BaseParams
 ): AsyncGenerator<string, void, unknown> {
-  const options: Options = {
-    ...baseOptions(params),
-    includePartialMessages: true,
-  };
+  const stream = client().messages.stream({
+    model: params.model ?? DEFAULT_MODEL,
+    max_tokens: DEFAULT_MAX_TOKENS,
+    system: params.systemPrompt,
+    messages: toApiMessages(params.messages),
+  });
 
-  const q = query({ prompt: buildTranscript(params.messages), options });
-
-  for await (const msg of q) {
-    if (msg.type === "stream_event") {
-      const evt = msg.event as { type: string; delta?: { type: string; text?: string } };
-      if (
-        evt.type === "content_block_delta" &&
-        evt.delta?.type === "text_delta" &&
-        typeof evt.delta.text === "string"
-      ) {
-        yield evt.delta.text;
-      }
-    } else if (msg.type === "result") {
-      if (msg.subtype !== "success") {
-        throw new Error(
-          `LLM failed (${msg.subtype}): ${msg.errors.join("; ") || "no detail"}`
-        );
-      }
-      return;
+  for await (const event of stream) {
+    if (
+      event.type === "content_block_delta" &&
+      event.delta.type === "text_delta" &&
+      typeof event.delta.text === "string"
+    ) {
+      yield event.delta.text;
     }
   }
 }
