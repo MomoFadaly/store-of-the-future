@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { PlanResponse } from "@/lib/types";
+import { retailerNameFromUrl } from "@/lib/affiliate";
 
 interface PlanViewProps {
   plan: PlanResponse;
@@ -273,7 +274,7 @@ export function PlanView({
             <span>
               {isEmptyPlan
                 ? "A general chat assistant will serve non-shopping questions better"
-                : "As an Amazon Associate we earn from qualifying purchases"}
+                : "Real, buyable products. No payment, no commission, no paid placement."}
             </span>
             <span>Prices approximate · Est. 2026 · Vancouver</span>
           </footer>
@@ -398,7 +399,7 @@ function Plinth({
     <motion.a
       href={product.affiliateUrl}
       target="_blank"
-      rel="noopener sponsored"
+      rel="noopener noreferrer"
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.7, delay, ease: [0.2, 0.7, 0.2, 1] }}
@@ -510,7 +511,7 @@ function Plinth({
               <span className="text-text-deep-muted ml-1">USD</span>
             </span>
             <span className="font-mono text-[10px] tracking-[0.22em] uppercase text-accent-deep group-hover:underline flex items-center gap-1">
-              View
+              {retailerNameFromUrl(product.affiliateUrl)}
               <span className="inline-block transition-transform group-hover:translate-x-1">
                 →
               </span>

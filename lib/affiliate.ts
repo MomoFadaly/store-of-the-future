@@ -7,22 +7,128 @@ const TAG =
     ? RAW_TAG.trim()
     : null;
 
-// Build an Amazon affiliate URL. Prefers direct-product (/dp/ASIN) links —
-// those earn the full category commission rate (typically 3-4%). Falls back
-// to keyword search when we couldn't resolve an ASIN (Amazon's anti-bot
-// blocked us, or no matching result) — that earns the lower 1-1.5% rate.
+// ─── Brand-direct + specialty retailer routing ──────────────────────────
+//
+// Some brands are best bought direct (warranty, freshness, price) — others
+// are best bought from a specialty retailer who actually stocks them.
+// When the model picks one of these brands and we don't have a confirmed
+// Amazon ASIN, we generate the brand-direct or specialty URL instead of
+// falling through to a generic Amazon search.
+
+// Brands that sell direct + are usually the best/cheapest path to buy.
+// Maps brand-name (case-insensitive) → URL builder taking the product name.
+const BRAND_DIRECT: Record<string, (name: string) => string> = {
+  ikea: (n) => `https://www.ikea.com/us/en/search/?q=${encodeURIComponent(n)}`,
+  muji: (n) => `https://www.muji.us/search?q=${encodeURIComponent(n)}`,
+  patagonia: (n) => `https://www.patagonia.com/search/?q=${encodeURIComponent(n)}`,
+  vitsoe: () => `https://www.vitsoe.com/us/606`,
+  apple: (n) => `https://www.apple.com/us/search/${encodeURIComponent(n)}`,
+  ridge: (n) => `https://ridge.com/search?q=${encodeURIComponent(n)}`,
+  away: (n) => `https://www.awaytravel.com/search?q=${encodeURIComponent(n)}`,
+  bose: (n) => `https://www.bose.com/c/search?q=${encodeURIComponent(n)}`,
+  yeti: (n) => `https://www.yeti.com/search?q=${encodeURIComponent(n)}`,
+  hydroflask: (n) => `https://www.hydroflask.com/search?q=${encodeURIComponent(n)}`,
+  arcteryx: (n) => `https://arcteryx.com/us/en/search?q=${encodeURIComponent(n)}`,
+  "arc'teryx": (n) => `https://arcteryx.com/us/en/search?q=${encodeURIComponent(n)}`,
+  ridgewallet: (n) => `https://ridge.com/search?q=${encodeURIComponent(n)}`,
+  vivobarefoot: (n) => `https://www.vivobarefoot.com/us/search?q=${encodeURIComponent(n)}`,
+  allbirds: (n) => `https://www.allbirds.com/collections/all?q=${encodeURIComponent(n)}`,
+  hokaoneone: (n) => `https://www.hoka.com/en/us/search?q=${encodeURIComponent(n)}`,
+  hoka: (n) => `https://www.hoka.com/en/us/search?q=${encodeURIComponent(n)}`,
+  brooks: (n) => `https://www.brooksrunning.com/en_us/search?q=${encodeURIComponent(n)}`,
+  saucony: (n) => `https://www.saucony.com/en/search?q=${encodeURIComponent(n)}`,
+  oakley: (n) => `https://www.oakley.com/en-us/search?q=${encodeURIComponent(n)}`,
+  oneill: (n) => `https://www.oneill.com/search?q=${encodeURIComponent(n)}`,
+};
+
+// Category-aware specialty retailers — fall back here when brand-direct
+// doesn't apply. The product type (inferred from name keywords) picks the
+// best specialty retailer for that category.
+const SPECIALTY_BY_KEYWORD: Array<{ keywords: RegExp; url: (q: string) => string; name: string }> = [
+  // Outdoor / camping / hiking gear → REI
+  { keywords: /\b(tent|backpack|sleeping bag|sleeping pad|stove|water filter|trekking|hiking|climbing|crampons|harness|carabiner|bear canister|kayak|ski|snowboard)\b/i,
+    url: (q) => `https://www.rei.com/search?q=${encodeURIComponent(q)}`, name: 'REI' },
+  // Fly fishing / fishing → Bass Pro / Cabela's
+  { keywords: /\b(rod|reel|fly|tackle|lure|bait)\b/i,
+    url: (q) => `https://www.basspro.com/shop/en/search?q=${encodeURIComponent(q)}`, name: 'Bass Pro' },
+  // Coffee / espresso gear → Seattle Coffee Gear
+  { keywords: /\b(espresso|grinder|moka|chemex|aeropress|pour.?over|burr|portafilter)\b/i,
+    url: (q) => `https://www.seattlecoffeegear.com/search?q=${encodeURIComponent(q)}`, name: 'Seattle Coffee Gear' },
+  // Kitchen / cookware → Williams-Sonoma
+  { keywords: /\b(dutch oven|cast iron|skillet|saucepan|stockpot|knife set|cutting board|stand mixer|food processor)\b/i,
+    url: (q) => `https://www.williams-sonoma.com/search/results.html?words=${encodeURIComponent(q)}`, name: 'Williams Sonoma' },
+  // Music / instruments → Sweetwater
+  { keywords: /\b(guitar|bass|amp|amplifier|synth|midi|microphone|monitor|interface|keyboard)\b/i,
+    url: (q) => `https://www.sweetwater.com/store/search.php?s=${encodeURIComponent(q)}`, name: 'Sweetwater' },
+  // Beauty / skincare → Sephora
+  { keywords: /\b(serum|moisturizer|cleanser|sunscreen|spf|retinol|toner|exfoliant|cushion)\b/i,
+    url: (q) => `https://www.sephora.com/search?keyword=${encodeURIComponent(q)}`, name: 'Sephora' },
+  // Furniture / home → West Elm
+  { keywords: /\b(sofa|couch|armchair|dining table|bookshelf|bed frame|mattress|nightstand|dresser|rug)\b/i,
+    url: (q) => `https://www.westelm.com/search/results.html?words=${encodeURIComponent(q)}`, name: 'West Elm' },
+];
+
+// Build a real product URL.
+// Priority: confirmed Amazon ASIN → brand-direct → specialty retailer → Amazon search.
+// All targets are real e-commerce pages.
 export function affiliateUrlFor(
   brand: string,
   name: string,
   asin: string | null | undefined
 ): string {
-  const tagSuffix = TAG ? `?tag=${TAG}` : "";
+  // 1. Confirmed Amazon ASIN — direct product page
   if (asin) {
+    const tagSuffix = TAG ? `?tag=${TAG}` : "";
     return `https://www.amazon.com/dp/${asin}${tagSuffix}`;
   }
-  const query = encodeURIComponent(`${brand} ${name}`.trim());
-  const sep = tagSuffix ? "&" : "";
-  return `https://www.amazon.com/s?k=${query}${sep}${TAG ? `tag=${TAG}` : ""}`;
+
+  // 2. Brand-direct (best price + warranty for these brands)
+  const brandKey = brand.toLowerCase().replace(/[^a-z]/g, "");
+  const brandUrlBuilder = BRAND_DIRECT[brandKey];
+  if (brandUrlBuilder) return brandUrlBuilder(name);
+
+  // 3. Specialty retailer based on product type
+  const fullQuery = `${brand} ${name}`.trim();
+  for (const route of SPECIALTY_BY_KEYWORD) {
+    if (route.keywords.test(name) || route.keywords.test(brand)) {
+      return route.url(fullQuery);
+    }
+  }
+
+  // 4. Amazon keyword search (last resort — still a real product page)
+  const query = encodeURIComponent(fullQuery);
+  return TAG
+    ? `https://www.amazon.com/s?k=${query}&tag=${TAG}`
+    : `https://www.amazon.com/s?k=${query}`;
+}
+
+// Returns the human-readable name of the retailer for a given product URL.
+// Used for the "View on Amazon" / "View on REI" / etc. label in plan-view.
+export function retailerNameFromUrl(url: string): string {
+  if (!url) return 'Buy';
+  const u = url.toLowerCase();
+  if (u.includes('amazon.com')) return 'Amazon';
+  if (u.includes('rei.com')) return 'REI';
+  if (u.includes('ikea.com')) return 'IKEA';
+  if (u.includes('muji.us')) return 'MUJI';
+  if (u.includes('patagonia.com')) return 'Patagonia';
+  if (u.includes('vitsoe.com')) return 'Vitsoe';
+  if (u.includes('apple.com')) return 'Apple';
+  if (u.includes('ridge.com')) return 'Ridge';
+  if (u.includes('awaytravel.com')) return 'Away';
+  if (u.includes('bose.com')) return 'Bose';
+  if (u.includes('yeti.com')) return 'YETI';
+  if (u.includes('arcteryx.com')) return "Arc'teryx";
+  if (u.includes('basspro.com')) return 'Bass Pro';
+  if (u.includes('seattlecoffeegear.com')) return 'Seattle Coffee Gear';
+  if (u.includes('williams-sonoma.com')) return 'Williams Sonoma';
+  if (u.includes('sweetwater.com')) return 'Sweetwater';
+  if (u.includes('sephora.com')) return 'Sephora';
+  if (u.includes('westelm.com')) return 'West Elm';
+  if (u.includes('walmart.com')) return 'Walmart';
+  if (u.includes('target.com')) return 'Target';
+  if (u.includes('bestbuy.com')) return 'Best Buy';
+  return 'Buy';
 }
 
 /**

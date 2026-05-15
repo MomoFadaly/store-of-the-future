@@ -284,7 +284,7 @@ const ACTS = [
     roman: "IV",
     title: "The takeaway",
     line: "You leave with a list. You buy from wherever you like.",
-    body: "We don't take payment. We earn a small affiliate cut from Amazon when you click through, and that's it.",
+    body: "We don't take payment. We don't take a cut. We don't have paid placement. The list is the list.",
     image: "/generated/vignette-act-iv-takeaway-1.png",
   },
 ];
@@ -493,7 +493,7 @@ const PRINCIPLES = [
   {
     n: "04",
     title: "Real products. Real prices.",
-    body: "Every item we name is a real, buyable product. We don't take payment. We earn a small affiliate share when you buy through Amazon, and we tell you that here so it's never a surprise.",
+    body: "Every item we name is a real, buyable product. We link to wherever it actually sells — Amazon, the brand's site, REI, IKEA, wherever. We don't take payment, don't take a commission, don't run paid placement.",
   },
 ];
 
