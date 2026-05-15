@@ -129,7 +129,11 @@ export default function HomeClient({
         if (done) break;
         const chunk = decoder.decode(value, { stream: true });
         fullText += chunk;
-        setStreamingText(fullText);
+        // Hide streaming display when we recognize a control marker prefix —
+        // SAFETY / SYNTHESIZE / STREAM_ERROR sentinels are internal signals,
+        // not user-facing text. The end-of-stream handler routes them.
+        const lookingLikeSentinel = /^\s*<</.test(fullText);
+        setStreamingText(lookingLikeSentinel ? "" : fullText);
       }
 
       // Stream complete. Check for error sentinel.
