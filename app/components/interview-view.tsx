@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "@/lib/types";
+import { TopBar } from "./top-bar";
 
 interface InterviewViewProps {
   messages: ChatMessage[];
@@ -103,34 +104,11 @@ export function InterviewView({
         }}
       />
 
-      <header className="sticky top-0 z-50 border-b border-border bg-bg/80 backdrop-blur-xl px-6 sm:px-10 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="relative inline-flex items-center justify-center w-7 h-7 rounded-lg bg-text">
-            <span
-              className="absolute inset-[3px] rounded-md"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent-3) 100%)",
-              }}
-            />
-          </span>
-          <span
-            className="font-[family-name:var(--font-display)] text-base text-text tracking-tight"
-            style={{ fontWeight: 600 }}
-          >
-            Store of the Future
-          </span>
-          <span className="hidden sm:inline font-mono text-[10px] tracking-[0.22em] uppercase text-text-deep-muted ml-2">
-            / inside · at the desk
-          </span>
-        </div>
-        <button
-          onClick={onReset}
-          className="font-mono text-[11px] tracking-[0.18em] uppercase text-text-deep-muted hover:text-text transition-colors"
-        >
-          ← Step back outside
-        </button>
-      </header>
+      <TopBar
+        subLabel="inside · at the desk"
+        onReset={onReset}
+        confirmReset={messages.length > 0}
+      />
 
       <div ref={scrollerRef} className="flex-1 overflow-y-auto pb-48">
         <div className="max-w-3xl mx-auto px-6 sm:px-10 py-10 sm:py-14">

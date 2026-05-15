@@ -5,6 +5,7 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { PlanResponse } from "@/lib/types";
 import { retailerNameFromUrl } from "@/lib/affiliate";
+import { TopBar } from "./top-bar";
 
 interface PlanViewProps {
   plan: PlanResponse;
@@ -88,34 +89,11 @@ export function PlanView({
         }}
       />
 
-      <header className="sticky top-0 z-50 border-b border-border bg-bg/80 backdrop-blur-xl px-6 sm:px-10 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="relative inline-flex items-center justify-center w-7 h-7 rounded-lg bg-text">
-            <span
-              className="absolute inset-[3px] rounded-md"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 50%, var(--accent-3) 100%)",
-              }}
-            />
-          </span>
-          <span
-            className="font-[family-name:var(--font-display)] text-base text-text tracking-tight"
-            style={{ fontWeight: 600 }}
-          >
-            Store of the Future
-          </span>
-          <span className="hidden sm:inline font-mono text-[10px] tracking-[0.22em] uppercase text-text-deep-muted ml-2">
-            / {isEmptyPlan ? "not a shop question" : "the exhibit"}
-          </span>
-        </div>
-        <button
-          onClick={onReset}
-          className="font-mono text-[11px] tracking-[0.18em] uppercase text-text-deep-muted hover:text-text transition-colors"
-        >
-          ← Step back outside
-        </button>
-      </header>
+      <TopBar
+        subLabel={isEmptyPlan ? "not a shop question" : "the exhibit"}
+        onReset={onReset}
+        confirmReset={!isEmptyPlan}
+      />
 
       <div className="flex-1 px-6 sm:px-10 py-16 sm:py-24 pb-40">
         <article className="max-w-6xl mx-auto">
